@@ -9,16 +9,34 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onFileSystem:file"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
-    "commands": [
+    "commands":[
       {
-        "command": "git-add-exclude.helloWorld",
-        "title": "Hello World"
+        "command": "git-add-exclude.hello",
+        "title": "Hello world"
       }
-    ]
+    ],
+    "configuration":{
+      "title": "git add exclude",
+      "properties": {
+        "git-add-exclude.blockStartTag": {
+          "type": "string",
+          "default": "#git-add-exclude-start"
+        },
+        "git-add-exclude.blockEndTag": {
+          "type": "string",
+          "default": "#git-add-exclude-end"
+        }
+      }
+    }
   },
+  "extensionDependencies": [
+    "vscode.git"
+  ],
   "scripts": {
     "vscode:prepublish": "pnpm run package",
     "compile": "webpack",

@@ -1,26 +1,83 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
+import { GitExtension } from "@/git";
+import * as vscode from "vscode";
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "git-add-exclude" is now active!');
-
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand('git-add-exclude.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from git-add-exclude!');
-	});
-
-	context.subscriptions.push(disposable);
+  vscode.commands.registerCommand("git-add-exclude.hello", () => {
+    watchGitAddOperation();
+  });
 }
 
-// This method is called when your extension is deactivated
 export function deactivate() {}
+
+type RepositoryInternalApi = {
+  onDidRunOperation: (
+    callback: (param: { operation: { kind: string } }) => void
+  ) => void;
+  stage: (uri: vscode.Uri, stageText: string) => void;
+};
+
+function commentRegex(tag: string) {
+  return RegExp(`^((\/\/)|(\/\*))[\\*\\s]*${tag}`);
+}
+
+function watchGitAddOperation() {
+  const gitExtensionApi = vscode.extensions
+    .getExtension<GitExtension>("vscode.git")
+    ?.exports?.getAPI(1);
+  if (gitExtensionApi === undefined) {
+    return;
+  }
+
+  vscode.window.showInformationMessage("插件启动成功");
+
+  gitExtensionApi.repositories.forEach((repo) => {
+    const repository = (repo as any).repository as RepositoryInternalApi;
+    repository.onDidRunOperation(({ operation }) => {
+      console.log({
+        operation,
+        kind: operation.kind,
+        isequal: operation.kind === "Add",
+      });
+
+      if (operation.kind === "Add") {
+        const extensionConfig =
+          vscode.workspace.getConfiguration("git-add-exclude");
+
+        const blockStartTag = extensionConfig.get<string>(
+          "blockStartTag",
+          "#git-add-exclude-start"
+        );
+        const blockEndTag = extensionConfig.get<string>(
+          "blockEndTag",
+          "#git-add-exclude-end"
+        );
+
+        const blockStartTagRegex = commentRegex(blockStartTag)
+        const blockEndTagRegex = commentRegex(blockEndTag)
+
+        repo.state.indexChanges.forEach(async (change) => {
+          const uri = change.uri;
+          const textDocument = await vscode.workspace.openTextDocument(uri);
+
+          const stageText: string[] = [];
+
+          let isWrappedByTag = false;
+          for (let line = 0; line < textDocument.lineCount; line++) {
+            const lineText = textDocument.getText(
+              new vscode.Range(line, 0, line + 1, 0)
+            );
+            if (blockStartTagRegex.test(lineText.trimStart())) {
+              isWrappedByTag = true;
+            } else if (blockEndTagRegex.test(lineText.trimStart())) {
+              isWrappedByTag = false;
+            } else if (!isWrappedByTag) {
+              stageText.push(lineText);
+            }
+          }
+
+          repository.stage(uri, stageText.join(""));
+        });
+      }
+    });
+  });
+}
